@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import requests
+import time
 
 def download_iiif_images(img_url):
     response = requests.get(img_url, timeout=30)
@@ -46,6 +47,7 @@ def cache_iiif_images(
 
         local_ls_path = f"{local_rel_path}/{filename}".replace("\\", "/")
         resolved_urls.append(f"{local_files_prefix}{local_ls_path}")
+        time.sleep(0.5)  # Small delay for Gallica...
 
     return resolved_urls
 
