@@ -1,21 +1,53 @@
-import json 
+import hashlib
+import json
+import os
 import requests
 
-def download_manifest(manifest_url):
-    response = requests.get(manifest_url)
-    print(response)
-    if response.status_code == 200:
-        return response.json()
-    else:
-        raise Exception(f"Failed to download manifest: {response.status_code}")
-    
-
 def download_iiif_images(img_url):
-    response = requests.get(img_url)
+    response = requests.get(img_url, timeout=30)
     if response.status_code == 200:
         return response.content
     else:
         raise Exception(f"Failed to download image: {response.status_code}")
+
+
+def _build_local_image_name(url, index):
+    digest = hashlib.md5(url.encode("utf-8")).hexdigest()[:12]
+    return f"page_{index:05d}_{digest}.jpg"
+
+
+def cache_iiif_images(
+    image_urls,
+    local_dir,
+    local_files_prefix="/data/local-files/?d=",
+    local_rel_path="dataset/annuaires-test/images",
+):
+    os.makedirs(local_dir, exist_ok=True)
+
+    resolved_urls = []
+    for idx, url in enumerate(image_urls):
+        if not url:
+            resolved_urls.append("")
+            continue
+
+        filename = _build_local_image_name(url, idx)
+        local_path = os.path.join(local_dir, filename)
+
+        if not os.path.exists(local_path):
+            try:
+                image_bytes = download_iiif_images(url)
+                with open(local_path, "wb") as img_file:
+                    img_file.write(image_bytes)
+            except Exception as ex:
+                print(f"Warning: failed to cache image {url}: {ex}")
+                # Keep remote URL as fallback when local cache fails.
+                resolved_urls.append(url)
+                continue
+
+        local_ls_path = f"{local_rel_path}/{filename}".replace("\\", "/")
+        resolved_urls.append(f"{local_files_prefix}{local_ls_path}")
+
+    return resolved_urls
 
 def retrieve_images_url(manifest,offset):
     with open(manifest, 'r', encoding='utf-8') as f:
@@ -34,9 +66,11 @@ def retrieve_images_url(manifest,offset):
     return images_urls[offset:]
 
 def retrieveLayoutAnnotations(annotations_file, imgs_ls, output_file):
+    # Open Soduco v4 layout annotations.
     with open(annotations_file, 'r', encoding='utf-8') as f:
         annotations_data = json.load(f)
 
+    # Retrieve rows and bboxs
     if isinstance(annotations_data, dict):
         annotations = annotations_data.get("items", [])
         images_bboxes = annotations_data.get("images_bboxes", [])
@@ -44,9 +78,11 @@ def retrieveLayoutAnnotations(annotations_file, imgs_ls, output_file):
         annotations = annotations_data
         images_bboxes = []
 
+    # Init vars
     pages_by_id = {}
     pages_order = []
     counter = 0
+    # Group annotates by page
     for annotation in annotations:
         lines_resolved = annotation.get("lines_resolved", [])
         bboxes = annotation.get("bboxes", [])
@@ -83,12 +119,13 @@ def retrieveLayoutAnnotations(annotations_file, imgs_ls, output_file):
 
     pages_annotations = [pages_by_id[page_id] for page_id in pages_order]
 
+    #Save annotations named "soducov4name_layout.json"
     with open(output_file, 'w', encoding='utf-8') as f:
         json.dump(pages_annotations, f, ensure_ascii=False)
 
 def layoutAnnotationsToLabelStudio(annotations_file, output_file):
     """
-     Convert layout annotations to Label Studio format.
+     Convert layout annotations to Label Studio pre-annotated OCR format.
      {
         "data": {
             "ocr": "/data/upload/receipt_00523.png"
@@ -297,11 +334,12 @@ def layoutAnnotationsToLabelStudio(annotations_file, output_file):
 
     return label_studio_tasks
 
-def labelStudiosToCOCO(annotations_file, output_file):
-    return "Not implemented yet"
-
 if __name__ == "__main__":
     FILES_PATH = "./dataset/annuaires-test/"
+    IMAGES_CACHE_DIR = os.path.join(FILES_PATH, "images")
+    LS_LOCAL_FILES_PREFIX = os.getenv("LS_LOCAL_FILES_PREFIX", "/data/local-files/?d=")
+    LS_LOCAL_REL_PATH = os.getenv("LS_LOCAL_REL_PATH", "dataset/annuaires-test/images")
+
     with open(FILES_PATH + 'manifests.json', 'r') as f:
         manifest_ls = json.load(f)
 
@@ -309,8 +347,16 @@ if __name__ == "__main__":
         manifest_url = elem['manifest_url']
         annotations_file = FILES_PATH + elem['annotations']
         layout_output = FILES_PATH + elem['annotations'].replace('.json', '_layout.json')
-        imgs = retrieve_images_url(FILES_PATH + 'manifest_' + elem['annotations'], 21)
+        remote_imgs = retrieve_images_url(FILES_PATH + 'manifest_' + elem['annotations'], 21)
+        #Download IIIF images and cache them locally for Label Studio to use as pre-annotations.
+        imgs = cache_iiif_images(
+            remote_imgs,
+            IMAGES_CACHE_DIR,
+            local_files_prefix=LS_LOCAL_FILES_PREFIX,
+            local_rel_path=LS_LOCAL_REL_PATH,
+        )
+        # Retrieve soduco v4 annotations and group them by page
         retrieveLayoutAnnotations(annotations_file, imgs, layout_output)
         labelstudio_output = FILES_PATH + elem['annotations'].replace('.json', '_label_studio.json')
+        # Convert annotations from soducov4 to label studio
         layoutAnnotationsToLabelStudio(layout_output, labelstudio_output)
-        #manifest_file = download_manifest(manifest_url)
