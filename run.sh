@@ -3,10 +3,10 @@
 # https://paddlepaddle.github.io/PaddleX/latest/en/module_usage/tutorials/ocr_modules/layout_detection.html#41-data-preparation
 # ------
 
-# Préparation des données
-mkdir -p dataset
-wget https://paddle-model-ecology.bj.bcebos.com/paddlex/data/det_layout_examples.tar -P ./dataset
-tar -xf ./dataset/det_layout_examples.tar -C ./dataset/
+# Préparation des données (si téléchargement du dataset d'exemple)
+#mkdir -p dataset
+#wget https://paddle-model-ecology.bj.bcebos.com/paddlex/data/det_layout_examples.tar -P ./dataset
+#tar -xf ./dataset/det_layout_examples.tar -C ./dataset/
 
 # Vérification du dataset
 python main.py -c paddlex/configs/modules/layout_detection/PP-DocLayout-L.yaml \

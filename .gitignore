@@ -1,4 +1,6 @@
 NOTES.md
 labelstudio_env/
 dataset/det_layout_examples.tar
+dataset/det_layout_examples/
 __pycache__/
+dataset/annuaires-test/imgs
