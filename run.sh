@@ -8,6 +8,8 @@
 #wget https://paddle-model-ecology.bj.bcebos.com/paddlex/data/det_layout_examples.tar -P ./dataset
 #tar -xf ./dataset/det_layout_examples.tar -C ./dataset/
 
+cd PaddleX/paddlex/
+
 # Vérification du dataset
 python main.py -c paddlex/configs/modules/layout_detection/PP-DocLayout-L.yaml \
     -o Global.mode=check_dataset \
@@ -20,6 +22,6 @@ python main.py -c paddlex/configs/modules/layout_detection/PP-DocLayout-L.yaml \
     -o Global.mode=train \
     -o Global.dataset_dir=./../../dataset_test \
     -o Global.device=cpu \
-    -o Global.output=./../../output \
+    -o Global.output=./output \
     -o Train.epochs_iters=1 \
     -o Train.num_classes=6

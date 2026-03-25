@@ -3,4 +3,4 @@
 python main.py -c paddlex/configs/modules/layout_detection/PP-DocLayout-L.yaml \
     -o Global.mode=predict \
     -o Predict.model_dir="./output/best_model/inference" \
-    -o Predict.input="./../../dataset_test/val_000001.jpg"
+    -o Predict.input="./../../dataset_test/images/val_000001.jpg"
