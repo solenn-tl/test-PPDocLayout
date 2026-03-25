@@ -24,13 +24,16 @@ chmod ./install.sh
 ```bash
 ./run.sh
 ```
+* Test la structure du dataset
+* Réalise le fine-tuning
 
 ## Evaluation
 ```bash
 ./evaluate.sh
 ```
-
+* Evalue le résultat sur le val set
 ## Inference
 ```bash
 ./inference.sh
 ```
+* Prédictions sur une image
