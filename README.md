@@ -37,12 +37,30 @@ d:/Pro/codes/layout-ocr/labelstudio_env/Scripts/python.exe .\dataset.py \
 	--seed 42
 ```
 
+### 2b) Restrict full/train/val JSON annotations to images currently in `imgs`
+
+Use `--images-dir` to keep only images present in the folder (matching by file name)
+before writing the full/train/val JSON files.
+
+```bash
+d:/Pro/codes/layout-ocr/labelstudio_env/Scripts/python.exe .\dataset.py \
+	--input .\dataset\annuaires-test\ev9iv0_label_studio.json \
+	--output .\dataset\annuaires-test\ev9iv0_coco.json \
+	--split-train-val \
+	--images-dir .\dataset\annuaires-test\dataset\imgs \
+	--val-ratio 0.2 \
+	--seed 42 \
+	--train-output .\dataset\annuaires-test\dataset\annotations\train.json \
+	--val-output .\dataset\annuaires-test\dataset\annotations\val.json
+```
+
 ### 3) Optional flags
 
 - `--image-prefix JPEGImages`: prefix image file names in COCO (`JPEGImages/f22.jpg`, etc.)
 - `--include-transcription`: add Label Studio textarea content to each annotation under `transcription`
 - `--no-background`: remove category id `0` (`_background_`)
 - `--train-output <path>` and `--val-output <path>`: custom split output paths
+- `--images-dir <path>`: keep only images (and their annotations) that exist in this folder before writing outputs/splits
 
 Example with explicit split outputs:
 
@@ -51,8 +69,9 @@ d:/Pro/codes/layout-ocr/labelstudio_env/Scripts/python.exe .\dataset.py \
 	--input .\dataset\annuaires-test\ev9iv0_label_studio.json \
 	--output .\dataset\annuaires-test\ev9iv0_coco.json \
 	--split-train-val \
-	--train-output .\dataset\annuaires-test\train.json \
-	--val-output .\dataset\annuaires-test\val.json
+	--images-dir .\dataset\annuaires-test\dataset\imgs \
+	--train-output .\dataset\annuaires-test\dataset\annotations\train.json \
+	--val-output .\dataset\annuaires-test\dataset\annotations\val.json
 ```
 
 ## To do

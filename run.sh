@@ -8,13 +8,20 @@
 #wget https://paddle-model-ecology.bj.bcebos.com/paddlex/data/det_layout_examples.tar -P ./dataset
 #tar -xf ./dataset/det_layout_examples.tar -C ./dataset/
 
+# Changement de répertoire vers le projet PaddleX (où se trouve main.py)
+cd paddlex-xp/PaddleX
+
 # Vérification du dataset
 python main.py -c paddlex/configs/modules/layout_detection/PP-DocLayout-L.yaml \
     -o Global.mode=check_dataset \
-    -o Global.dataset_dir=./dataset/det_layout_examples
+    -o Global.dataset_dir=./../../dataset/annuaires-test
 
 # Lancement de l'entraînement
+## Test sur 1 epoch
+## Vérifier/Modifier le numéro de GPU selon la machine
 python main.py -c paddlex/configs/modules/layout_detection/PP-DocLayout-L.yaml \
     -o Global.mode=train \
-    -o Global.dataset_dir=./dataset/det_layout_examples \
-    -o Global.device=gpu:0
+    -o Global.dataset_dir=./../../dataset/annuaires-test \
+    -o Global.device=gpu:1 \
+    -o Global.output=./../../output \
+    -o Train.epochs_iters=1

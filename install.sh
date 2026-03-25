@@ -7,10 +7,10 @@ mkdir paddlex-xp
 cd paddlex-xp
 
 # Création de l'environnement virtuel avec Python 3.11
-python3 -m venv .venv
+python3 -m venv .venv_paddelx
 
 # Activation de l'environnement
-source .venv/bin/activate
+source .venv_paddelx/bin/activate
 
 # Mise à jour de pip
 pip install --upgrade pip
@@ -36,6 +36,9 @@ pip install -e ".[base]"
 
 # Installation des modules de détection via la CLI PaddleX
 paddlex --install PaddleDetection
+
+# OU Installation avec pip
+#pip install paddlex==3.0rc0
 
 # Post-bidouillage pas dans la doc mais nécessaire car PaddleDetection attends d'anciennes vieilles versions de pip et OpenCV
 pip install "setuptools<82"	      

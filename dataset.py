@@ -298,6 +298,52 @@ def split_coco_by_images(
 	return train_coco, val_coco
 
 
+def filter_coco_by_images_dir(
+	coco_data: dict[str, Any],
+	images_dir: Path,
+) -> dict[str, Any]:
+	"""Keep only images present in a local folder and their matching annotations."""
+	images = coco_data.get("images", [])
+	annotations = coco_data.get("annotations", [])
+
+	if not isinstance(images, list) or not isinstance(annotations, list):
+		raise ValueError("Invalid COCO data: 'images' and 'annotations' must be lists.")
+
+	if not images_dir.exists() or not images_dir.is_dir():
+		raise ValueError(f"Images directory does not exist or is not a directory: {images_dir}")
+
+	available_names = {
+		path.name
+		for path in images_dir.iterdir()
+		if path.is_file()
+	}
+
+	filtered_images = [
+		img
+		for img in images
+		if isinstance(img, dict)
+		and "id" in img
+		and isinstance(img.get("file_name"), str)
+		and Path(img["file_name"]).name in available_names
+	]
+	filtered_image_ids = {img["id"] for img in filtered_images}
+
+	filtered_annotations = [
+		ann
+		for ann in annotations
+		if isinstance(ann, dict) and ann.get("image_id") in filtered_image_ids
+	]
+
+	return {
+		"info": dict(coco_data.get("info", {})),
+		"licenses": coco_data.get("licenses", []),
+		"images": filtered_images,
+		"annotations": filtered_annotations,
+		"categories": coco_data.get("categories", []),
+		"type": coco_data.get("type", "instances"),
+	}
+
+
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
 		description="Convert Label Studio layout export to PaddleDetection COCO annotations.",
@@ -347,6 +393,10 @@ def parse_args() -> argparse.Namespace:
 		"--val-output",
 		help="Path for val split COCO JSON. Optional when --output is provided.",
 	)
+	parser.add_argument(
+		"--images-dir",
+		help="Optional path to an images folder. Keep only annotations for images present in this folder.",
+	)
 	return parser.parse_args()
 
 
@@ -366,6 +416,9 @@ def main() -> None:
 		image_prefix=args.image_prefix.strip("/"),
 	)
 	coco = convert_label_studio_to_coco(payload, config)
+
+	if args.images_dir:
+		coco = filter_coco_by_images_dir(coco, Path(args.images_dir))
 
 	if args.split_train_val:
 		train_coco, val_coco = split_coco_by_images(coco, val_ratio=args.val_ratio, seed=args.seed)

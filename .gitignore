@@ -4,3 +4,4 @@ dataset/det_layout_examples.tar
 dataset/det_layout_examples/
 __pycache__/
 dataset/annuaires-test/imgs
+paddlex-xp/
