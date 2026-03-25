@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 """Convert Label Studio layout annotations to PaddleDetection-style COCO JSON.
 
-This script reads Label Studio exports where each region is represented by:
-- one ``rectanglelabels`` result (label + geometry), and optionally
-- one ``textarea`` result with the same ``id`` (transcription).
+This script supports three workflows:
+1) Convert Label Studio export to one COCO JSON file.
+2) Convert and split into train/val JSON files.
+3) Build a dataset folder with:
+	- annotations/train.json
+	- annotations/val.json
+	- imgs/ with copied and split-prefixed image names.
 
-The output is COCO detection JSON, which is the annotation format expected by
-PaddleDetection for layout training.
+Input expectations:
+- Label Studio tasks where geometry is in ``rectanglelabels`` results.
+- Optional transcription in ``textarea`` results sharing the same result ``id``.
+
+When source image folders contain more files than Label Studio annotations,
+``--include-unannotated-images`` can include missing images as zero-annotation
+entries before split/export.
 """
 
 from __future__ import annotations
@@ -14,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import random
+import shutil
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
@@ -344,14 +354,182 @@ def filter_coco_by_images_dir(
 	}
 
 
+def _read_image_size(image_path: Path) -> tuple[int, int]:
+	"""Read image dimensions using Pillow only when needed."""
+	try:
+		from PIL import Image
+	except ImportError as exc:
+		raise ValueError(
+			"Pillow is required to include unannotated images. Install it with: pip install Pillow"
+		) from exc
+
+	with Image.open(image_path) as image:
+		width, height = image.size
+
+	if width <= 0 or height <= 0:
+		raise ValueError(f"Invalid image size for {image_path}: {width}x{height}")
+
+	return int(width), int(height)
+
+
+def include_unannotated_images_from_dir(
+	coco_data: dict[str, Any],
+	images_dir: Path,
+) -> tuple[dict[str, Any], int]:
+	"""Add images present on disk but missing from Label Studio as empty-annotation images."""
+	images = coco_data.get("images", [])
+	annotations = coco_data.get("annotations", [])
+
+	if not isinstance(images, list) or not isinstance(annotations, list):
+		raise ValueError("Invalid COCO data: 'images' and 'annotations' must be lists.")
+
+	if not images_dir.exists() or not images_dir.is_dir():
+		raise ValueError(f"Images directory does not exist or is not a directory: {images_dir}")
+
+	existing_names = {
+		Path(img["file_name"]).name
+		for img in images
+		if isinstance(img, dict) and isinstance(img.get("file_name"), str)
+	}
+	next_image_id = max(
+		(
+			int(img["id"])
+			for img in images
+			if isinstance(img, dict) and isinstance(img.get("id"), int)
+		),
+		default=-1,
+	) + 1
+
+	updated_images = list(images)
+	added_count = 0
+
+	for source_image in sorted(path for path in images_dir.iterdir() if path.is_file()):
+		if source_image.name in existing_names:
+			continue
+
+		width, height = _read_image_size(source_image)
+		updated_images.append(
+			{
+				"id": next_image_id,
+				"file_name": source_image.name,
+				"width": width,
+				"height": height,
+			}
+		)
+		next_image_id += 1
+		added_count += 1
+
+	updated_coco = {
+		"info": dict(coco_data.get("info", {})),
+		"licenses": coco_data.get("licenses", []),
+		"images": updated_images,
+		"annotations": annotations,
+		"categories": coco_data.get("categories", []),
+		"type": coco_data.get("type", "instances"),
+	}
+
+	return updated_coco, added_count
+
+
+def copy_images_for_split_and_rewrite(
+	coco_data: dict[str, Any],
+	split_name: str,
+	source_images_dir: Path,
+	target_images_dir: Path,
+) -> tuple[dict[str, Any], int]:
+	"""Copy split images to target folder and rename file names with split prefix."""
+	images = coco_data.get("images", [])
+	annotations = coco_data.get("annotations", [])
+
+	if not isinstance(images, list) or not isinstance(annotations, list):
+		raise ValueError("Invalid COCO data: 'images' and 'annotations' must be lists.")
+
+	if not source_images_dir.exists() or not source_images_dir.is_dir():
+		raise ValueError(f"Images directory does not exist or is not a directory: {source_images_dir}")
+
+	target_images_dir.mkdir(parents=True, exist_ok=True)
+
+	updated_images: list[dict[str, Any]] = []
+	missing_names: list[str] = []
+	copied_index = 1
+
+	for image in images:
+		if not isinstance(image, dict):
+			continue
+
+		file_name = image.get("file_name")
+		image_id = image.get("id")
+		if not isinstance(file_name, str) or image_id is None:
+			continue
+
+		source_name = Path(file_name).name
+		source_path = source_images_dir / source_name
+		if not source_path.exists() or not source_path.is_file():
+			missing_names.append(source_name)
+			continue
+
+		extension = source_path.suffix or ".jpg"
+		new_name = f"{split_name}_{copied_index:06d}{extension.lower()}"
+		copied_index += 1
+
+		shutil.copy2(source_path, target_images_dir / new_name)
+
+		updated_image = dict(image)
+		updated_image["file_name"] = new_name
+		updated_images.append(updated_image)
+
+	if missing_names:
+		preview = ", ".join(missing_names[:5])
+		suffix = "" if len(missing_names) <= 5 else f" (+{len(missing_names) - 5} more)"
+		raise ValueError(
+			f"{len(missing_names)} images from split '{split_name}' were not found in {source_images_dir}: "
+			f"{preview}{suffix}"
+		)
+
+	kept_ids = {
+		img["id"]
+		for img in updated_images
+		if isinstance(img, dict) and "id" in img
+	}
+	updated_annotations = [
+		ann
+		for ann in annotations
+		if isinstance(ann, dict) and ann.get("image_id") in kept_ids
+	]
+
+	updated_coco = {
+		"info": dict(coco_data.get("info", {})),
+		"licenses": coco_data.get("licenses", []),
+		"images": updated_images,
+		"annotations": updated_annotations,
+		"categories": coco_data.get("categories", []),
+		"type": coco_data.get("type", "instances"),
+	}
+
+	return updated_coco, len(updated_images)
+
+
+def write_json(path: Path, payload: dict[str, Any]) -> None:
+	path.parent.mkdir(parents=True, exist_ok=True)
+	with path.open("w", encoding="utf-8") as fp:
+		json.dump(payload, fp, ensure_ascii=False)
+
+
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
 		description="Convert Label Studio layout export to PaddleDetection COCO annotations.",
+		epilog=(
+			"Examples:\n"
+			"  Convert: --input labels.json --output full.json\n"
+			"  Split: --input labels.json --output full.json --split-train-val\n"
+			"  Dataset: --input labels.json --images-dir imgs --dataset-dir dataset_out"
+		),
+		formatter_class=argparse.RawDescriptionHelpFormatter,
 	)
 	parser.add_argument("--input", required=True, help="Path to Label Studio JSON export.")
 	parser.add_argument(
 		"--output",
-		help="Path to output COCO JSON file (required unless using --split-train-val with explicit split outputs).",
+		help="Path to output COCO JSON file (required unless using --split-train-val with explicit split outputs, or --dataset-dir).",
 	)
 	parser.add_argument(
 		"--image-prefix",
@@ -395,7 +573,25 @@ def parse_args() -> argparse.Namespace:
 	)
 	parser.add_argument(
 		"--images-dir",
-		help="Optional path to an images folder. Keep only annotations for images present in this folder.",
+		help=(
+			"Optional path to an images folder. Keep only annotations for images present in this folder "
+			"(matching by file name). Required by --dataset-dir and --include-unannotated-images."
+		),
+	)
+	parser.add_argument(
+		"--include-unannotated-images",
+		action="store_true",
+		help=(
+			"Include source-folder images that are not present in Label Studio as empty-annotation images. "
+			"Requires --images-dir. Uses Pillow to read image size."
+		),
+	)
+	parser.add_argument(
+		"--dataset-dir",
+		help=(
+			"Create dataset outputs in this folder: annotations/train.json, annotations/val.json, "
+			"and copied imgs/ with split-prefixed file names."
+		),
 	)
 	return parser.parse_args()
 
@@ -420,6 +616,56 @@ def main() -> None:
 	if args.images_dir:
 		coco = filter_coco_by_images_dir(coco, Path(args.images_dir))
 
+	added_unannotated = 0
+	if args.include_unannotated_images:
+		if not args.images_dir:
+			raise ValueError("--include-unannotated-images requires --images-dir.")
+		coco, added_unannotated = include_unannotated_images_from_dir(coco, Path(args.images_dir))
+
+	if args.dataset_dir:
+		if not args.images_dir:
+			raise ValueError("--dataset-dir requires --images-dir to copy source images.")
+
+		train_coco, val_coco = split_coco_by_images(coco, val_ratio=args.val_ratio, seed=args.seed)
+
+		dataset_dir = Path(args.dataset_dir)
+		annotations_dir = dataset_dir / "annotations"
+		target_imgs_dir = dataset_dir / "imgs"
+
+		train_coco, train_copied = copy_images_for_split_and_rewrite(
+			train_coco,
+			split_name="train",
+			source_images_dir=Path(args.images_dir),
+			target_images_dir=target_imgs_dir,
+		)
+		val_coco, val_copied = copy_images_for_split_and_rewrite(
+			val_coco,
+			split_name="val",
+			source_images_dir=Path(args.images_dir),
+			target_images_dir=target_imgs_dir,
+		)
+
+		train_output_path = annotations_dir / "train.json"
+		val_output_path = annotations_dir / "val.json"
+		write_json(train_output_path, train_coco)
+		write_json(val_output_path, val_coco)
+
+		if args.output:
+			write_json(Path(args.output), coco)
+
+		message = (
+			f"Built dataset in {dataset_dir}. "
+			f"Train: {train_copied} images, {len(train_coco['annotations'])} annotations -> {train_output_path}. "
+			f"Val: {val_copied} images, {len(val_coco['annotations'])} annotations -> {val_output_path}."
+		)
+		if added_unannotated > 0:
+			message += f" Included {added_unannotated} unannotated images from {args.images_dir}."
+		if args.output:
+			message += f" Wrote full annotations to {args.output}."
+
+		print(message)
+		return
+
 	if args.split_train_val:
 		train_coco, val_coco = split_coco_by_images(coco, val_ratio=args.val_ratio, seed=args.seed)
 
@@ -439,17 +685,11 @@ def main() -> None:
 			)
 
 		if full_output_path is not None:
-			full_output_path.parent.mkdir(parents=True, exist_ok=True)
-			with full_output_path.open("w", encoding="utf-8") as fp:
-				json.dump(coco, fp, ensure_ascii=False)
+			write_json(full_output_path, coco)
 
-		train_output_path.parent.mkdir(parents=True, exist_ok=True)
-		with train_output_path.open("w", encoding="utf-8") as fp:
-			json.dump(train_coco, fp, ensure_ascii=False)
+		write_json(train_output_path, train_coco)
 
-		val_output_path.parent.mkdir(parents=True, exist_ok=True)
-		with val_output_path.open("w", encoding="utf-8") as fp:
-			json.dump(val_coco, fp, ensure_ascii=False)
+		write_json(val_output_path, val_coco)
 
 		if full_output_path is not None:
 			print(
@@ -471,9 +711,7 @@ def main() -> None:
 
 	output_path = Path(args.output)
 
-	output_path.parent.mkdir(parents=True, exist_ok=True)
-	with output_path.open("w", encoding="utf-8") as fp:
-		json.dump(coco, fp, ensure_ascii=False)
+	write_json(output_path, coco)
 
 	print(
 		f"Converted {len(coco['images'])} images and {len(coco['annotations'])} annotations "

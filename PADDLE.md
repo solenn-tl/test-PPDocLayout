@@ -10,4 +10,5 @@ bash ./install.sh
 ## Fine-tuning
 ### Quelques remarques
 * Il faut être dans le dossier ```paddlex-xp/PaddleX``` où se trouve le fichier ```main.py```.
+
 ###
