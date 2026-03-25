@@ -1,6 +1,6 @@
 # ------
 # Initialisation du projet
-# Testé avec Python 3.11
+# Testé avec Python 3.12
 # ------
 
 mkdir paddlex-xp
@@ -37,9 +37,10 @@ pip install -e ".[base]"
 # Installation des modules de détection via la CLI PaddleX
 paddlex --install PaddleDetection
 
-# OU Installation avec pip
-#pip install paddlex==3.0rc0
+# Post-bidouillage pas dans la doc mais nécessaire pour éviter les conflits OpenCV
+pip install "setuptools<82"
 
-# Post-bidouillage pas dans la doc mais nécessaire car PaddleDetection attends d'anciennes vieilles versions de pip et OpenCV
-pip install "setuptools<82"	      
-pip install "opencv-python==4.5.5.64"
+# Ne pas mélanger opencv-python et opencv-contrib-python: garder une seule famille
+pip uninstall -y opencv-python opencv-python-headless opencv-contrib-python opencv-contrib-python-headless #testé avec 4.10.0
+pip install --no-deps "opencv-contrib-python==4.10.0.84"
+pip install "numpy>=1.24,<2.0" #Testé avec 1.26.4

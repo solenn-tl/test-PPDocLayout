@@ -5,3 +5,5 @@ dataset/det_layout_examples/
 __pycache__/
 dataset/annuaires-test/imgs
 paddlex-xp/
+output/
+brouillon/
