@@ -14,14 +14,14 @@ cd paddlex-xp/PaddleX
 # Vérification du dataset
 python main.py -c paddlex/configs/modules/layout_detection/PP-DocLayout-L.yaml \
     -o Global.mode=check_dataset \
-    -o Global.dataset_dir=./../../dataset/annuaires-test
+    -o Global.dataset_dir=./../../dataset/annuaires-test/dataset
 
 # Lancement de l'entraînement
 ## Test sur 1 epoch
 ## Vérifier/Modifier le numéro de GPU selon la machine
 python main.py -c paddlex/configs/modules/layout_detection/PP-DocLayout-L.yaml \
     -o Global.mode=train \
-    -o Global.dataset_dir=./../../dataset/annuaires-test \
+    -o Global.dataset_dir=./../../dataset/annuaires-test/dataset \
     -o Global.device=gpu:1 \
     -o Global.output=./../../output \
     -o Train.epochs_iters=1
